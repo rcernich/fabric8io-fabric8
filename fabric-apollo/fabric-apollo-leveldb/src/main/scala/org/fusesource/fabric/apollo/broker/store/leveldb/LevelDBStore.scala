@@ -13,7 +13,8 @@ import dto.{LevelDBStoreDTO, LevelDBStoreStatusDTO}
 import collection.Seq
 import org.fusesource.hawtdispatch._
 import java.util.concurrent._
-import atomic.{AtomicReference, AtomicLong}
+import atomic.AtomicLong
+import locks.ReentrantReadWriteLock
 import org.apache.activemq.apollo.broker.store._
 import org.apache.activemq.apollo.util._
 import org.fusesource.hawtdispatch.ListEventAggregator
@@ -23,6 +24,45 @@ import scala.util.continuations._
 import java.io._
 import org.apache.activemq.apollo.web.resources.ViewHelper
 import collection.mutable.ListBuffer
+
+trait LevelDBClient {
+
+  case class UsageCounter() {
+    var count = 0L
+    var size = 0L
+    def increment(value:Int) = {
+      count += 1
+      size += value
+    }
+  }
+
+  def log:RecordLog
+  def last_index_snapshot_pos:Long
+  def last_gc_ts:Long
+  def last_gc_duration:Long
+  def in_gc:Boolean
+  def gc_detected_log_usage:Map[Long, UsageCounter]
+
+  def start:Unit
+  def stop:Unit
+  def suspend:Unit
+  def resume:Unit
+  def purge:Unit
+  def gc:Unit
+  def getLastMessageKey:Long
+  def getLastQueueKey:Long
+  def addQueue(record: QueueRecord, callback:Runnable):Unit
+  def removeQueue(queue_key: Long, callback:Runnable):Unit
+  def store(uows: Seq[LevelDBStore#DelayableUOW], callback:Runnable):Unit
+  def listQueues: Seq[Long]
+  def getQueue(queue_key: Long): Option[QueueRecord]
+  def listQueueEntryGroups(queue_key: Long, limit: Int) : Seq[QueueEntryRange]
+  def getQueueEntries(queue_key: Long, firstSeq:Long, lastSeq:Long): Seq[QueueEntryRecord]
+  def loadMessages(requests: ListBuffer[(Long, AtomicLong, (Option[MessageRecord])=>Unit)]):Unit
+  def export_pb(streams:StreamManager[OutputStream]):Result[Zilch,String]
+  def import_pb(streams:StreamManager[InputStream]):Result[Zilch,String]
+  def stats:String
+}
 
 /**
  * @author <a href="http://hiramchirino.com">Hiram Chirino</a>
@@ -43,9 +83,21 @@ class LevelDBStore(val config:LevelDBStoreDTO) extends DelayingStoreSupport {
   var gc_executor:ExecutorService = _
   var read_executor:ExecutorService = _
 
-  var client:LevelDBClient = _
-  def create_client = new LevelDBClient(this)
+  var client:LevelDBClient = create_client
 
+  def create_client:LevelDBClient = {
+    config.driver match {
+      case "jni" => new JniLevelDBClient(this)
+      case "iq80" => new IQ80LevelDBClient(this)
+      case null =>
+        try {
+          new JniLevelDBClient(this)
+        } catch {
+          case _ =>
+            new IQ80LevelDBClient(this)
+        }
+    }
+  }
 
   def store_kind = "leveldb"
 
@@ -94,7 +146,7 @@ class LevelDBStore(val config:LevelDBStoreDTO) extends DelayingStoreSupport {
       poll_stats
       write_executor {
         try {
-          client.start()
+          client.start
           next_msg_key.set(client.getLastMessageKey + 1)
           next_queue_key.set(client.getLastQueueKey + 1)
           poll_gc
@@ -105,8 +157,7 @@ class LevelDBStore(val config:LevelDBStoreDTO) extends DelayingStoreSupport {
             LevelDBStore.error(e, "Store client startup failure: "+e)
         }
       }
-    }
-    catch {
+    } catch {
       case e:Throwable =>
         e.printStackTrace()
         LevelDBStore.error(e, "Store startup failure: "+e)
@@ -163,7 +214,7 @@ class LevelDBStore(val config:LevelDBStoreDTO) extends DelayingStoreSupport {
    */
   def purge(callback: =>Unit) = {
     write_executor {
-      client.purge()
+      client.purge
       next_queue_key.set(1)
       next_msg_key.set(1)
       callback
@@ -260,7 +311,7 @@ class LevelDBStore(val config:LevelDBStoreDTO) extends DelayingStoreSupport {
     val rc = new LevelDBStoreStatusDTO
     fill_store_status(rc)
     rc.message_load_batch_size = message_load_batch_size
-    rc.index_stats = client.index.getProperty("leveldb.stats")
+    rc.index_stats = client.stats
     write_executor {
       rc.log_append_pos = client.log.appender_limit
       rc.index_snapshot_pos = client.last_index_snapshot_pos
@@ -272,7 +323,7 @@ class LevelDBStore(val config:LevelDBStoreDTO) extends DelayingStoreSupport {
         row_layout.format("File", "Messages", "Used Size", "Total Size")+
         client.log.log_infos.map(x=> x._1 -> client.gc_detected_log_usage.get(x._1)).toSeq.flatMap { x=>
           try {
-            val file = LevelDBClient.create_sequence_file(client.directory, x._1, LevelDBClient.LOG_SUFFIX)
+            val file = JniLevelDBClient.create_sequence_file(config.directory, x._1, JniLevelDBClient.LOG_SUFFIX)
             val size = file.length()
             val usage = x._2 match {
               case Some(usage)=>

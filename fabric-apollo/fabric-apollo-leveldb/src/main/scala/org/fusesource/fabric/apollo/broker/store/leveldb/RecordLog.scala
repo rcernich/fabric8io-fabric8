@@ -247,7 +247,7 @@ case class RecordLog(directory: File, log_suffix:String) {
 
   def open = {
     log_mutex.synchronized {
-      log_infos = LevelDBClient.find_sequence_files(directory, log_suffix).map { case (position,file) =>
+      log_infos = JniLevelDBClient.find_sequence_files(directory, log_suffix).map { case (position,file) =>
         position -> LogInfo(file, position, new AtomicLong(file.length()))
       }
 
@@ -281,7 +281,7 @@ case class RecordLog(directory: File, log_suffix:String) {
   def appender_limit = current_appender.limit
   def appender_start = current_appender.start
 
-  def next_log(position:Long) = LevelDBClient.create_sequence_file(directory, position, log_suffix)
+  def next_log(position:Long) = JniLevelDBClient.create_sequence_file(directory, position, log_suffix)
 
   def appender[T](func: (LogAppender)=>T):T= {
     try {

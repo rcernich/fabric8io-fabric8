@@ -27,6 +27,9 @@ public class LevelDBStoreDTO extends StoreDTO {
     @XmlAttribute
     public File directory;
 
+  @XmlAttribute(name="driver")
+  public String driver;
+
     @XmlAttribute(name="gc_interval")
     public Integer gc_interval;
 

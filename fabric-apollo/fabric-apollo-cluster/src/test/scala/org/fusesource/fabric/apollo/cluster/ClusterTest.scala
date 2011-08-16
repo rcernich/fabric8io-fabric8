@@ -20,10 +20,10 @@ import java.net.InetSocketAddress
 import org.apache.activemq.apollo.broker.{Broker, Queue}
 import org.apache.activemq.apollo.dto.{BrokerDTO, XmlCodec, QueueDestinationDTO}
 import java.util.Properties
-import org.apache.activemq.apollo.util.{SocketProxy, ServiceControl, Dispatched}
-/**
- */
-class ClusterTest extends ZkFunSuiteSupport with ShouldMatchers {
+import org.apache.activemq.apollo.util.{FunSuiteSupport, SocketProxy, ServiceControl, Dispatched}
+import org.scalatest.BeforeAndAfterEach
+
+class ClusterTestSupport extends ZkFunSuiteSupport with BeforeAndAfterEach with ShouldMatchers {
 
   var brokers = List[Broker]()
   var client = new StompClient
@@ -89,7 +89,52 @@ class ClusterTest extends ZkFunSuiteSupport with ShouldMatchers {
     broker
   }
 
-  test("starting to brokers with the same node id") {
+  def router(bs:Broker) = bs.default_virtual_host.router.asInstanceOf[ClusterRouter]
+
+  class ShortCircuitFailure(msg:String) extends RuntimeException(msg)
+
+  def within[T](timeout:Long, unit:TimeUnit)(func: => Unit ):Unit = {
+    val start = System.currentTimeMillis
+    var amount = unit.toMillis(timeout)
+    var sleep_amount = amount / 100
+    var last:Throwable = null
+
+    if( sleep_amount < 1 ) {
+      sleep_amount = 1
+    }
+    try {
+      func
+      return
+    } catch {
+      case e:ShortCircuitFailure => throw e
+      case e:Throwable => last = e
+    }
+
+    while( (System.currentTimeMillis-start) < amount ) {
+      Thread.sleep(sleep_amount)
+      try {
+        func
+        return
+      } catch {
+        case e:ShortCircuitFailure => throw e
+        case e:Throwable => last = e
+      }
+    }
+
+    throw last
+  }
+
+  def access[T](d:Dispatched)(action: =>T) = {
+    (d.dispatch_queue !! { action }).await()
+  }
+}
+
+/**
+ */
+class ClusterTest extends ClusterTestSupport with ShouldMatchers {
+
+
+  test("starting two brokers with the same node id") {
 
     // Lets use a socket proxy so we can simulate a network disconnect.
     val proxy = new SocketProxy(new java.net.URI("tcp://"+zk_url))
@@ -260,46 +305,6 @@ class ClusterTest extends ZkFunSuiteSupport with ShouldMatchers {
     // slave becomes master.. message has to move to the new queue.
     within(5, SECONDS) ( access(slave_queue){ slave_queue.queue_items } should be === 1 )
 
-  }
-
-
-  def router(bs:Broker) = bs.default_virtual_host.router.asInstanceOf[ClusterRouter]
-
-  class ShortCircuitFailure(msg:String) extends RuntimeException(msg)
-
-  def within[T](timeout:Long, unit:TimeUnit)(func: => Unit ):Unit = {
-    val start = System.currentTimeMillis
-    var amount = unit.toMillis(timeout)
-    var sleep_amount = amount / 100
-    var last:Throwable = null
-
-    if( sleep_amount < 1 ) {
-      sleep_amount = 1
-    }
-    try {
-      func
-      return
-    } catch {
-      case e:ShortCircuitFailure => throw e
-      case e:Throwable => last = e
-    }
-
-    while( (System.currentTimeMillis-start) < amount ) {
-      Thread.sleep(sleep_amount)
-      try {
-        func
-        return
-      } catch {
-        case e:ShortCircuitFailure => throw e
-        case e:Throwable => last = e
-      }
-    }
-
-    throw last
-  }
-
-  def access[T](d:Dispatched)(action: =>T) = {
-    (d.dispatch_queue !! { action }).await()
   }
 
 }

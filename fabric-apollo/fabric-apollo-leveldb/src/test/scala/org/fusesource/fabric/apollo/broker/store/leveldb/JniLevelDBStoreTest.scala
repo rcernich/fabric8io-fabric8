@@ -16,11 +16,12 @@ import org.apache.activemq.apollo.util.FileSupport._
 /**
  * @author <a href="http://hiramchirino.com">Hiram Chirino</a>
  */
-class LevelDBStoreTest extends StoreFunSuiteSupport {
+class JniLevelDBStoreTest extends StoreFunSuiteSupport {
 
   def create_store(flushDelay:Long):Store = {
     new LevelDBStore({
       val rc = new LevelDBStoreDTO
+      rc.driver = "jni"
       rc.directory = basedir / "target" / "apollo-data"
       rc.flush_delay = flushDelay
       rc
