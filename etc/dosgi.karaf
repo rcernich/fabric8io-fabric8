@@ -8,7 +8,7 @@ fabric.version=${project.version}
 camel.version=${camel-version}
 
 fabric:create-profile jre15
-fabric:edit-profile -p jre15 system.java.specification.version=1.5
+fabric:edit-profile -p jre15 config.java.specification.version=1.5
 fabric:edit-profile -p jre15 --bundles mvn:org.apache.servicemix.specs/org.apache.servicemix.specs.activation-api-1.1/1.8.0
 fabric:edit-profile -p jre15 --bundles mvn:org.apache.servicemix.specs/org.apache.servicemix.specs.jaxb-api-2.2/1.8.0
 fabric:edit-profile -p jre15 --bundles mvn:org.apache.servicemix.bundles/org.apache.servicemix.bundles.jaxb-impl/2.2.1.1_1
