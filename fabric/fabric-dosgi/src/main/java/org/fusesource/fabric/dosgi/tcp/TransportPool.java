@@ -8,6 +8,14 @@
  */
 package org.fusesource.fabric.dosgi.tcp;
 
+import org.fusesource.fabric.dosgi.io.Service;
+import org.fusesource.hawtdispatch.DispatchQueue;
+import org.fusesource.hawtdispatch.transport.ProtocolCodec;
+import org.fusesource.hawtdispatch.transport.Transport;
+import org.fusesource.hawtdispatch.transport.TransportListener;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.LinkedList;
@@ -15,14 +23,6 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-
-import org.fusesource.fabric.dosgi.io.ProtocolCodec;
-import org.fusesource.fabric.dosgi.io.Service;
-import org.fusesource.fabric.dosgi.io.Transport;
-import org.fusesource.fabric.dosgi.io.TransportListener;
-import org.fusesource.hawtdispatch.DispatchQueue;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public abstract class TransportPool implements Service {
 
@@ -133,18 +133,24 @@ System.err.println("Creating new transport for: " + this.uri);
         Transport transport = createTransport(this.uri);
         transport.setDispatchQueue(queue);
         transport.setProtocolCodec(createCodec());
-        transport.setTransportListener(new Listener());
+        transport.setTransportListener(new Listener(transport));
         transports.put(transport, 0L);
-        transport.start();
+        transport.start(null);
     }
 
     protected class Listener implements TransportListener {
 
-        public void onTransportCommand(Transport transport, Object command) {
+        private final Transport transport;
+
+        Listener(Transport transport) {
+            this.transport = transport;
+        }
+
+        public void onTransportCommand(Object command) {
             TransportPool.this.onCommand(command);
         }
 
-        public void onRefill(final Transport transport) {
+        public void onRefill() {
             while (pending.size() > 0 &&  !transport.full()) {
                 boolean accepted = transport.offer(pending.removeFirst());
                 assert accepted: "Should have been accepted since the transport was not full";
@@ -160,7 +166,7 @@ System.err.println("Creating new transport for: " + this.uri);
                         public void run() {
                             if (transports.get(transport) == time) {
                                 transports.remove(transport);
-                                transport.stop();
+                                transport.stop(null);
                             }
                         }
                     });
@@ -169,20 +175,20 @@ System.err.println("Creating new transport for: " + this.uri);
 
         }
 
-        public void onTransportFailure(Transport transport, IOException error) {
+        public void onTransportFailure(IOException error) {
             if (!transport.isDisposed()) {
                 LOGGER.info("Transport failure", error);
                 transports.remove(transport);
-                transport.stop();
+                transport.stop(null);
             }
         }
 
-        public void onTransportConnected(Transport transport) {
+        public void onTransportConnected() {
             transport.resumeRead();
-            onRefill(transport);
+            onRefill();
         }
 
-        public void onTransportDisconnected(Transport transport) {
+        public void onTransportDisconnected(boolean reconnecting) {
             transports.remove(transport);
         }
     }

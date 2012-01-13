@@ -12,18 +12,19 @@ import org.fusesource.fabric.dosgi.api.Dispatched;
 import org.fusesource.fabric.dosgi.api.ObjectSerializationStrategy;
 import org.fusesource.fabric.dosgi.api.Serialization;
 import org.fusesource.fabric.dosgi.api.SerializationStrategy;
-import org.fusesource.fabric.dosgi.impl.Manager;
 import org.fusesource.fabric.dosgi.io.ClientInvoker;
-import org.fusesource.fabric.dosgi.io.ProtocolCodec;
-import org.fusesource.fabric.dosgi.io.Transport;
 import org.fusesource.hawtbuf.*;
 import org.fusesource.hawtdispatch.DispatchQueue;
+import org.fusesource.hawtdispatch.transport.ProtocolCodec;
+import org.fusesource.hawtdispatch.transport.TcpTransport;
+import org.fusesource.hawtdispatch.transport.Transport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
+import java.net.URI;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.WeakHashMap;
@@ -283,7 +284,9 @@ public class ClientInvokerImpl implements ClientInvoker, Dispatched {
 
         @Override
         protected Transport createTransport(String uri) throws Exception {
-            return new TcpTransportFactory().connect(uri);
+            TcpTransport rc = new TcpTransport();
+            rc.connecting(new URI(uri), null);
+            return rc;
         }
 
         @Override

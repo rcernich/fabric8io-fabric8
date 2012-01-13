@@ -12,10 +12,10 @@ import org.fusesource.fabric.dosgi.api.Dispatched;
 import org.fusesource.fabric.dosgi.api.ObjectSerializationStrategy;
 import org.fusesource.fabric.dosgi.api.Serialization;
 import org.fusesource.fabric.dosgi.api.SerializationStrategy;
-import org.fusesource.fabric.dosgi.impl.Manager;
-import org.fusesource.fabric.dosgi.io.*;
+import org.fusesource.fabric.dosgi.io.ServerInvoker;
 import org.fusesource.hawtbuf.*;
 import org.fusesource.hawtdispatch.DispatchQueue;
+import org.fusesource.hawtdispatch.transport.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -24,6 +24,7 @@ import java.io.IOException;
 import java.lang.reflect.Array;
 import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
+import java.net.URI;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.Executor;
@@ -135,13 +136,13 @@ public class ServerInvokerImpl implements ServerInvoker, Dispatched {
     public ServerInvokerImpl(String address, DispatchQueue queue, Map<String, SerializationStrategy> serializationStrategies) throws Exception {
         this.queue = queue;
         this.serializationStrategies = serializationStrategies;
-        this.server = new TcpTransportFactory().bind(address);
+        this.server = new TcpTransportServer(new URI(address));
         this.server.setDispatchQueue(queue);
-        this.server.setAcceptListener(new InvokerAcceptListener());
+        this.server.setTransportServerListener(new InvokerAcceptListener());
     }
 
     public InetSocketAddress getSocketAddress() {
-        return this.server.getSocketAddress();
+        return (InetSocketAddress) this.server.getSocketAddress();
     }
 
 
@@ -182,14 +183,20 @@ public class ServerInvokerImpl implements ServerInvoker, Dispatched {
     }
 
     public void stop(final Runnable onComplete) {
-        this.server.stop(new Runnable() {
-            public void run() {
-                blockingExecutor.shutdown();
-                if (onComplete != null) {
-                    onComplete.run();
+        try {
+            this.server.stop(new Runnable() {
+                public void run() {
+                    blockingExecutor.shutdown();
+                    if (onComplete != null) {
+                        onComplete.run();
+                    }
                 }
+            });
+        } catch (Exception e) {
+            if(onComplete!=null){
+                onComplete.run();
             }
-        });
+        }
     }
 
 
@@ -260,40 +267,47 @@ public class ServerInvokerImpl implements ServerInvoker, Dispatched {
         return new Buffer(b);
     }
 
-    class InvokerAcceptListener implements TransportAcceptListener {
+    class InvokerAcceptListener implements TransportServerListener {
 
-        public void onAccept(TransportServer transportServer, TcpTransport transport) {
+        public void onAccept(Transport transport) throws Exception {
             transport.setProtocolCodec(new LengthPrefixedCodec());
             transport.setDispatchQueue(queue());
-            transport.setTransportListener(new InvokerTransportListener());
-            transport.start();
+            transport.setTransportListener(new InvokerTransportListener(transport));
+            transport.start(null);
         }
 
-        public void onAcceptError(TransportServer transportServer, Exception error) {
+        public void onAcceptError(Exception error) {
             LOGGER.info("Error accepting incoming connection", error);
         }
     }
 
     class InvokerTransportListener implements TransportListener {
 
-        public void onTransportCommand(Transport transport, Object command) {
+        private final Transport transport;
+
+        InvokerTransportListener(Transport transport) {
+            this.transport = transport;
+        }
+
+        public void onTransportCommand(Object command) {
             ServerInvokerImpl.this.onCommand(transport, command);
         }
 
-        public void onRefill(Transport transport) {
+        public void onRefill() {
         }
 
-        public void onTransportFailure(Transport transport, IOException error) {
+        public void onTransportFailure(IOException error) {
             if (!transport.isDisposed() && !(error instanceof EOFException)) {
                 LOGGER.info("Transport failure", error);
             }
         }
 
-        public void onTransportConnected(Transport transport) {
+        public void onTransportConnected() {
             transport.resumeRead();
         }
 
-        public void onTransportDisconnected(Transport transport) {
+        @Override
+        public void onTransportDisconnected(boolean reconnecting) {
         }
     }
 

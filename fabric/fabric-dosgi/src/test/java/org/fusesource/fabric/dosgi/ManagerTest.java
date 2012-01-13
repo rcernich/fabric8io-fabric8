@@ -76,6 +76,8 @@ public class ManagerTest {
             }
 
             BundleContext bundleContext = createMock(BundleContext.class);
+            makeThreadSafe(bundleContext, true);
+
             ServiceRegistration registration = createMock(ServiceRegistration.class);
             Manager manager = new Manager(bundleContext, zooKeeper, "tcp://localhost:" + serverPort);
 
@@ -96,8 +98,14 @@ public class ManagerTest {
             reset(bundleContext, registration);
 
             BundleContext expBundleContext = createMock(BundleContext.class);
+            makeThreadSafe(expBundleContext, true);
+
             Bundle expBundle = createMock(Bundle.class);
+            makeThreadSafe(expBundle, true);
+
             ServiceReference reference = createMock(ServiceReference.class);
+            makeThreadSafe(reference, true);
+
             final Properties props = new Properties();
             props.put(Constants.OBJECTCLASS, new String[]{ConfigurationAdmin.class.getName()});
             expect(reference.getProperty(EasyMock.<String>anyObject())).andAnswer(new IAnswer<Object>() {
