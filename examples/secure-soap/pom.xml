@@ -28,7 +28,7 @@
     <parent>
         <groupId>org.fusesource.examples</groupId>
         <artifactId>project</artifactId>
-        <version>99-master-SNAPSHOT</version>
+        <version>master</version>
     </parent>
 
     <artifactId>secure-soap</artifactId>
