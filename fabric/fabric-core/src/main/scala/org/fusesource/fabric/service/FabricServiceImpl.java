@@ -16,31 +16,9 @@
  */
 package org.fusesource.fabric.service;
 
-import java.io.IOException;
-import java.lang.management.ManagementFactory;
-import java.net.URI;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import javax.management.MBeanServer;
-
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
-import org.fusesource.fabric.api.Container;
-import org.fusesource.fabric.api.ContainerProvider;
-import org.fusesource.fabric.api.CreateContainerMetadata;
-import org.fusesource.fabric.api.CreateContainerOptions;
-import org.fusesource.fabric.api.FabricException;
-import org.fusesource.fabric.api.FabricRequirements;
-import org.fusesource.fabric.api.FabricService;
-import org.fusesource.fabric.api.FabricStatus;
-import org.fusesource.fabric.api.PatchService;
-import org.fusesource.fabric.api.Profile;
-import org.fusesource.fabric.api.Version;
+import org.fusesource.fabric.api.*;
 import org.fusesource.fabric.api.jmx.FabricManager;
 import org.fusesource.fabric.api.jmx.HealthCheck;
 import org.fusesource.fabric.internal.ContainerImpl;
@@ -59,6 +37,13 @@ import org.osgi.service.cm.ConfigurationAdmin;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.management.MBeanServer;
+import java.io.IOException;
+import java.lang.management.ManagementFactory;
+import java.net.URI;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+
 import static org.fusesource.fabric.zookeeper.ZkPath.CONTAINER_PARENT;
 
 public class FabricServiceImpl implements FabricService {
@@ -69,6 +54,7 @@ public class FabricServiceImpl implements FabricService {
     private static final Logger LOGGER = LoggerFactory.getLogger(FabricServiceImpl.class);
 
     private IZKClient zooKeeper;
+    private ProfileDataStore profileDataStore;
     private Map<String, ContainerProvider> providers;
     private ConfigurationAdmin configurationAdmin;
     private String profile = ZkDefs.DEFAULT_PROFILE;
@@ -103,6 +89,14 @@ public class FabricServiceImpl implements FabricService {
 
     public IZKClient getZooKeeper() {
         return zooKeeper;
+    }
+
+    public void setProfileDataStore(ProfileDataStore profileDataStore) {
+        this.profileDataStore = profileDataStore;
+    }
+
+    public ProfileDataStore getProfileDataStore() {
+        return profileDataStore;
     }
 
     public void setZooKeeper(IZKClient zooKeeper) {

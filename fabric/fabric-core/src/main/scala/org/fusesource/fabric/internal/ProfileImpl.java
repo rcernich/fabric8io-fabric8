@@ -16,24 +16,13 @@
  */
 package org.fusesource.fabric.internal;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
-
-import org.apache.zookeeper.KeeperException;
 import org.fusesource.fabric.api.Container;
 import org.fusesource.fabric.api.FabricException;
 import org.fusesource.fabric.api.Profile;
 import org.fusesource.fabric.service.FabricServiceImpl;
-import org.fusesource.fabric.zookeeper.IZKClient;
-import org.fusesource.fabric.zookeeper.ZkPath;
-import org.fusesource.fabric.zookeeper.utils.ZooKeeperUtils;
+
+import java.io.IOException;
+import java.util.*;
 
 public class ProfileImpl implements Profile {
 
@@ -59,28 +48,12 @@ public class ProfileImpl implements Profile {
 
     @Override
     public Properties getAttributes() {
-        try {
-            String node = ZkPath.CONFIG_VERSIONS_PROFILE.getPath(version, id);
-            return ZooKeeperUtils.getProperties(service.getZooKeeper(), node);
-        } catch (Exception e) {
-            throw new FabricException(e);
-        }
+        return service.getProfileDataStore().getProfileAttributes(version, id);
     }
 
     @Override
     public void setAttribute(String key, String value) {
-        try {
-            Properties props = getAttributes();
-            if (value != null) {
-                props.setProperty(key, value);
-            } else {
-                props.remove(key);
-            }
-            String node = ZkPath.CONFIG_VERSIONS_PROFILE.getPath(version, id);
-            ZooKeeperUtils.setProperties(service.getZooKeeper(), node, props);
-        } catch (Exception e) {
-            throw new FabricException(e);
-        }
+        service.getProfileDataStore().setProfileAttribute(version, id, key, value);
     }
 
     public FabricServiceImpl getService() {
@@ -197,7 +170,7 @@ public class ProfileImpl implements Profile {
     public static Properties getContainerProperties(Profile p) throws IOException {
         byte[] b = p.getFileConfigurations().get(AGENT_PID + ".properties");
         if (b != null) {
-            return toProperties(b);
+            return DataStoreHelpers.toProperties(b);
         } else {
             return new Properties();
         }
@@ -273,36 +246,7 @@ public class ProfileImpl implements Profile {
 
     @Override
     public Map<String, byte[]> getFileConfigurations() {
-        try {
-            Map<String, byte[]> configurations = new HashMap<String, byte[]>();
-            String path = ZkPath.CONFIG_VERSIONS_PROFILE.getPath(version, id);
-            List<String> pids = service.getZooKeeper().getChildren(path);
-            for (String pid : pids) {
-                configurations.put(pid, getFileConfiguration(pid));
-            }
-            return configurations;
-        } catch (Exception e) {
-            throw new FabricException(e);
-        }
-    }
-
-    public byte[] getFileConfiguration(String pid) throws InterruptedException, KeeperException {
-        IZKClient zooKeeper = service.getZooKeeper();
-        String path = ZkPath.CONFIG_VERSIONS_PROFILE.getPath(version, id) + "/" + pid;
-        if (zooKeeper.exists(path) == null) {
-            return null;
-        }
-        if (zooKeeper.getData(path) == null) {
-            List<String> children = zooKeeper.getChildren(path);
-            StringBuffer buf = new StringBuffer();
-            for (String child : children) {
-                String value = zooKeeper.getStringData(path + "/" + child);
-                buf.append(String.format("%s = %s\n", child, value));
-            }
-            return buf.toString().getBytes();
-        } else {
-            return zooKeeper.getData(path);
-        }
+        return getService().getProfileDataStore().getFileConfigurations(version, id);
     }
 
     @Override
@@ -310,64 +254,11 @@ public class ProfileImpl implements Profile {
         if (isLocked()) {
             throw new UnsupportedOperationException("The profile " + id + " is locked and can not be modified");
         }
-        try {
-            IZKClient zooKeeper = service.getZooKeeper();
-            Map<String, byte[]> oldCfgs = getFileConfigurations();
-            // Store new configs
-            String path = ZkPath.CONFIG_VERSIONS_PROFILE.getPath(version, id);
-            for (Map.Entry<String, byte[]> entry : configurations.entrySet()) {
-                String pid = entry.getKey();
-                oldCfgs.remove(pid);
-                byte[] newCfg = entry.getValue();
-                String configPath =  path + "/" + pid;
-                if (zooKeeper.exists(configPath) != null && zooKeeper.getChildren(configPath).size() > 0) {
-                    List<String> kids = zooKeeper.getChildren(configPath);
-                    ArrayList<String> saved = new ArrayList<String>();
-                    // old format, we assume that the byte stream is in
-                    // a .properties format
-                    for (String line : new String(newCfg).split("\n")) {
-                        if (line.startsWith("#") || line.length() == 0) {
-                            continue;
-                        }
-                        String nameValue[] = line.split("=", 2);
-                        if (nameValue.length < 2) {
-                            continue;
-                        }
-                        String newPath = configPath + "/" + nameValue[0].trim();
-                        ZooKeeperUtils.set(zooKeeper, newPath, nameValue[1].trim());
-                        saved.add(nameValue[0].trim());
-                    }
-                    for ( String kid : kids ) {
-                        if (!saved.contains(kid)) {
-                            zooKeeper.deleteWithChildren(configPath + "/" + kid);
-                        }
-                    }
-                } else {
-                    ZooKeeperUtils.set(zooKeeper, configPath, newCfg);
-                }
-            }
-            for (String pid : oldCfgs.keySet()) {
-                zooKeeper.deleteWithChildren(path + "/" + pid);
-            }
-        } catch (Exception e) {
-            throw new FabricException(e);
-        }
+        getService().getProfileDataStore().setFileConfigurations(version, id, configurations);
     }
 
     public Map<String, Map<String, String>> getConfigurations() {
-        try {
-            Map<String, Map<String, String>> configurations = new HashMap<String, Map<String, String>>();
-            Map<String, byte[]> configs = getFileConfigurations();
-            for (Map.Entry<String, byte[]> entry: configs.entrySet()){
-                if(entry.getKey().endsWith(".properties")) {
-                    String pid = stripSuffix(entry.getKey(), ".properties");
-                    configurations.put(pid, getConfiguration(pid));
-                }
-            }
-            return configurations;
-        } catch (Exception e) {
-            throw new FabricException(e);
-        }
+        return getService().getProfileDataStore().getConfigurations(version, id);
     }
 
     @Override
@@ -379,75 +270,11 @@ public class ProfileImpl implements Profile {
         return map;
     }
 
-    private Map<String, String> getConfiguration(String pid) throws InterruptedException, KeeperException, IOException {
-        IZKClient zooKeeper = service.getZooKeeper();
-        String path = ZkPath.CONFIG_VERSIONS_PROFILE.getPath(version, id) + "/" + pid +".properties";
-        if (zooKeeper.exists(path) == null) {
-            return null;
-        }
-        byte[] data = zooKeeper.getData(path);
-        return toMap(toProperties(data));
-    }
-
-    public static byte[] toBytes(Properties source) throws IOException {
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        source.store(baos, null);
-        return baos.toByteArray();
-    }
-
-    public static Properties toProperties(byte[] source) throws IOException {
-        Properties rc = new Properties();
-        rc.load(new ByteArrayInputStream(source));
-        return rc;
-    }
-
-    public static Map<String, String> toMap(Properties source) {
-        Map<String, String> rc = new HashMap<String, String>();
-        for (Map.Entry<Object, Object> entry: source.entrySet()){
-            rc.put((String) entry.getKey(), (String) entry.getValue());
-        }
-        return rc;
-    }
-
-    public static Properties toProperties(Map<String, String> source) {
-        Properties rc = new Properties();
-        for (Map.Entry<String, String> entry: source.entrySet()){
-            rc.put(entry.getKey(), entry.getValue());
-        }
-        return rc;
-    }
-
-    public static String stripSuffix(String value, String suffix) throws IOException {
-        if(value.endsWith(suffix)) {
-            return value.substring(0, value.length() -suffix.length());
-        } else {
-            return value;
-        }
-    }
-
-
     public void setConfigurations(Map<String, Map<String, String>> configurations) {
         if (isLocked()) {
             throw new UnsupportedOperationException("The profile " + id + " is locked and can not be modified");
         }
-        try {
-            IZKClient zooKeeper = service.getZooKeeper();
-            Map<String, Map<String, String>> oldCfgs = getConfigurations();
-            // Store new configs
-            String path = ZkPath.CONFIG_VERSIONS_PROFILE.getPath(version, id);
-            for (Map.Entry<String, Map<String, String>> entry : configurations.entrySet()) {
-                String pid = entry.getKey();
-                oldCfgs.remove(pid);
-                byte[] data = toBytes(toProperties(entry.getValue()));
-                String p =  path + "/" + pid + ".properties";
-                ZooKeeperUtils.set(zooKeeper, p, data);
-            }
-            for (String key : oldCfgs.keySet()) {
-                zooKeeper.deleteWithChildren(path + "/" + key +".properties");
-            }
-        } catch (Exception e) {
-            throw new FabricException(e);
-        }
+        getService().getProfileDataStore().setConfigurations(version, id, configurations);
     }
 
     public void delete() {

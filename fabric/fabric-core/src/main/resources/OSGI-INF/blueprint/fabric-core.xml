@@ -35,7 +35,18 @@
         <property name="zooKeeper" ref="zooKeeper"/>
         <property name="configurationAdmin" ref="configurationAdmin"/>
         <property name="mbeanServer" ref="mbeanServer"/>
+        <property name="profileDataStore" ref="profileDataStore"/>
     </bean>
+
+
+    <bean id="zkProfileDataStore" class="org.fusesource.fabric.service.ZKProfileDataStore">
+      <property name="zk" ref="zooKeeper"/>
+    </bean>
+
+    <service ref="zkProfileDataStore" interface="org.fusesource.fabric.api.ProfileDataStore"/>
+
+    <reference id="profileDataStore" interface="org.fusesource.fabric.api.ProfileDataStore" availability="optional"/>
+
 
     <reference-list interface="org.fusesource.fabric.api.ContainerProvider" availability="optional">
         <reference-listener ref="fabricService" bind-method="registerProvider" unbind-method="unregisterProvider"/>
