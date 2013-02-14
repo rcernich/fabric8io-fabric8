@@ -3,6 +3,7 @@ package org.fusesource.fabric.api;
 import org.apache.zookeeper.KeeperException;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 
@@ -30,4 +31,22 @@ public interface ProfileDataStore {
     Properties getVersionAttributes(String version);
 
     void setVersionAttribute(String version, String key, String value);
+
+    void createVersion(String version);
+
+    void createVersion(String parentVersionId, String toVersion);
+
+    void deleteVersion(String version);
+
+    List<String> getVersions();
+
+    String getVersion(String name);
+
+    List<String> getProfiles(String version);
+
+    String getProfile(String version, String name);
+
+    void createProfile(String version, String name);
+
+    void deleteProfile(String versionId, String profileId);
 }

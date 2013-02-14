@@ -1,5 +1,6 @@
 package org.fusesource.fabric.service;
 
+import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
 import org.fusesource.fabric.api.FabricException;
 import org.fusesource.fabric.api.ProfileDataStore;
@@ -26,6 +27,97 @@ public class ZKProfileDataStore implements ProfileDataStore {
         return zk;
     }
 
+    @Override
+    public void createVersion(String version) {
+        try {
+            zk.createWithParents(ZkPath.CONFIG_VERSION.getPath(version), CreateMode.PERSISTENT);
+            zk.createWithParents(ZkPath.CONFIG_VERSIONS_PROFILES.getPath(version), CreateMode.PERSISTENT);
+        } catch (Exception e) {
+            throw new FabricException(e);
+        }
+    }
+
+    @Override
+    public void createVersion(String parentVersionId, String toVersion) {
+        try {
+            ZooKeeperUtils.copy(zk, ZkPath.CONFIG_VERSION.getPath(parentVersionId), ZkPath.CONFIG_VERSION.getPath(toVersion));
+        } catch (Exception e) {
+            throw new FabricException(e);
+        }
+    }
+
+    @Override
+    public void deleteVersion(String version) {
+        try {
+            zk.deleteWithChildren(ZkPath.CONFIG_VERSION.getPath(version));
+        } catch (Exception e) {
+            throw new FabricException(e);
+        }
+    }
+
+    @Override
+    public List<String> getVersions() {
+        try {
+            return zk.getChildren(ZkPath.CONFIG_VERSIONS.getPath());
+        } catch (Exception e) {
+            throw new FabricException(e);
+        }
+    }
+
+    @Override
+    public String getVersion(String name) {
+        try {
+            if (zk != null && zk.isConnected() && zk.exists(ZkPath.CONFIG_VERSION.getPath(name)) == null) {
+                return null;
+            }
+            return name;
+        } catch (FabricException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new FabricException(e);
+        }
+    }
+
+    @Override
+    public List<String> getProfiles(String version) {
+        try {
+            return zk.getChildren(ZkPath.CONFIG_VERSIONS_PROFILES.getPath(version));
+        } catch (Exception e) {
+            throw new FabricException(e);
+        }
+    }
+
+    @Override
+    public String getProfile(String version, String name) {
+        try {
+            String path = ZkPath.CONFIG_VERSIONS_PROFILE.getPath(version, name);
+            if (zk.exists(path) == null) {
+                return null;
+            }
+            return name;
+        } catch (Exception e) {
+            throw new FabricException(e);
+        }
+    }
+
+    @Override
+    public void createProfile(String version, String name) {
+        try {
+            ZooKeeperUtils.create(zk, ZkPath.CONFIG_VERSIONS_PROFILE.getPath(version, name));
+        } catch (Exception e) {
+            throw new FabricException(e);
+        }
+    }
+
+    @Override
+    public void deleteProfile(String versionId, String profileId) {
+        try {
+            zk.deleteWithChildren(ZkPath.CONFIG_VERSIONS_PROFILE.getPath(versionId, profileId));
+        } catch (Exception e) {
+            throw new FabricException(e);
+        }
+    }
+    
     @Override
     public Properties getVersionAttributes(String version) {
         try {

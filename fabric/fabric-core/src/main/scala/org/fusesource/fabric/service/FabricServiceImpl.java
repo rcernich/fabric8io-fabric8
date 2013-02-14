@@ -530,13 +530,8 @@ public class FabricServiceImpl implements FabricService {
     }
 
     public Version createVersion(String version) {
-        try {
-            zooKeeper.createWithParents(ZkPath.CONFIG_VERSION.getPath(version), CreateMode.PERSISTENT);
-            zooKeeper.createWithParents(ZkPath.CONFIG_VERSIONS_PROFILES.getPath(version), CreateMode.PERSISTENT);
-            return new VersionImpl(version, this);
-        } catch (Exception e) {
-            throw new FabricException(e);
-        }
+        getProfileDataStore().createVersion(version);
+        return new VersionImpl(version, this);
     }
 
     public Version createVersion(Version parent, String toVersion) {
@@ -544,85 +539,53 @@ public class FabricServiceImpl implements FabricService {
     }
 
     public Version createVersion(String parentVersionId, String toVersion) {
-        try {
-            ZooKeeperUtils.copy(zooKeeper, ZkPath.CONFIG_VERSION.getPath(parentVersionId), ZkPath.CONFIG_VERSION.getPath(toVersion));
-            return new VersionImpl(toVersion, this);
-        } catch (Exception e) {
-            throw new FabricException(e);
-        }
+        getProfileDataStore().createVersion(parentVersionId, toVersion);
+        return new VersionImpl(toVersion, this);
     }
 
     public void deleteVersion(String version) {
-        try {
-            zooKeeper.deleteWithChildren(ZkPath.CONFIG_VERSION.getPath(version));
-        } catch (Exception e) {
-            throw new FabricException(e);
-        }
+        getProfileDataStore().deleteVersion(version);
     }
 
     public Version[] getVersions() {
-        try {
-            List<Version> versions = new ArrayList<Version>();
-            List<String> children = zooKeeper.getChildren(ZkPath.CONFIG_VERSIONS.getPath());
-            for (String child : children) {
-                versions.add(new VersionImpl(child, this));
-            }
-            Collections.sort(versions);
-            return versions.toArray(new Version[versions.size()]);
-        } catch (Exception e) {
-            throw new FabricException(e);
+        List<Version> versions = new ArrayList<Version>();
+        List<String> children = getProfileDataStore().getVersions();
+        for (String child : children) {
+            versions.add(new VersionImpl(child, this));
         }
+        Collections.sort(versions);
+        return versions.toArray(new Version[versions.size()]);
     }
 
     public Version getVersion(String name) {
-        try {
-            if (zooKeeper != null && zooKeeper.isConnected() && zooKeeper.exists(ZkPath.CONFIG_VERSION.getPath(name)) == null) {
-                throw new FabricException("Version '" + name + "' does not exist!");
-            }
+        if (getProfileDataStore().getVersion(name) != null) {
             return new VersionImpl(name, this);
-        } catch (FabricException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new FabricException(e);
         }
+        throw new FabricException("Version '" + name + "' does not exist");
     }
 
     @Override
     public Profile[] getProfiles(String version) {
-        try {
-
-            List<String> names = zooKeeper.getChildren(ZkPath.CONFIG_VERSIONS_PROFILES.getPath(version));
-            List<Profile> profiles = new ArrayList<Profile>();
-            for (String name : names) {
-                profiles.add(new ProfileImpl(name, version, this));
-            }
-            return profiles.toArray(new Profile[profiles.size()]);
-        } catch (Exception e) {
-            throw new FabricException(e);
+        List<String> names = getProfileDataStore().getProfiles(version);
+        List<Profile> profiles = new ArrayList<Profile>();
+        for (String name : names) {
+            profiles.add(new ProfileImpl(name, version, this));
         }
+        return profiles.toArray(new Profile[profiles.size()]);
     }
 
     @Override
     public Profile getProfile(String version, String name) {
-        try {
-            String path = ZkPath.CONFIG_VERSIONS_PROFILE.getPath(version, name);
-            if (zooKeeper.exists(path) == null) {
-                return null;
-            }
+        if (getProfileDataStore().getProfile(version, name) != null) {
             return new ProfileImpl(name, version, this);
-        } catch (Exception e) {
-            throw new FabricException(e);
         }
+        throw new FabricException("Profile '" + name + "' does not exist in version '" + version + "'.");
     }
 
     @Override
     public Profile createProfile(String version, String name) {
-        try {
-            ZooKeeperUtils.create(zooKeeper, ZkPath.CONFIG_VERSIONS_PROFILE.getPath(version, name));
-            return new ProfileImpl(name, version, this);
-        } catch (Exception e) {
-            throw new FabricException(e);
-        }
+        getProfileDataStore().createProfile(version, name);
+        return new ProfileImpl(name, version, this);
     }
 
     @Override
@@ -631,11 +594,7 @@ public class FabricServiceImpl implements FabricService {
     }
 
     public void deleteProfile(String versionId, String profileId) {
-        try {
-            zooKeeper.deleteWithChildren(ZkPath.CONFIG_VERSIONS_PROFILE.getPath(versionId, profileId));
-        } catch (Exception e) {
-            throw new FabricException(e);
-        }
+        getProfileDataStore().deleteProfile(versionId, profileId);
     }
 
     protected ContainerTemplate getContainerTemplate(Container container, String jmxUser, String jmxPassword) {
