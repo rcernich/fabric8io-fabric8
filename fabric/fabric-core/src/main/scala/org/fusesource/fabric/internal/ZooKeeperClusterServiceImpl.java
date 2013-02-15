@@ -16,28 +16,12 @@
  */
 package org.fusesource.fabric.internal;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.StringReader;
-import java.io.StringWriter;
-import java.text.DecimalFormat;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Hashtable;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
 import org.apache.karaf.jaas.modules.Encryption;
 import org.apache.karaf.jaas.modules.encryption.EncryptionSupport;
 import org.apache.zookeeper.KeeperException;
 import org.fusesource.fabric.api.CreateEnsembleOptions;
 import org.fusesource.fabric.api.FabricException;
+import org.fusesource.fabric.api.ProfileDataStore;
 import org.fusesource.fabric.api.ZooKeeperClusterService;
 import org.fusesource.fabric.utils.HostUtils;
 import org.fusesource.fabric.utils.Ports;
@@ -47,7 +31,6 @@ import org.fusesource.fabric.zookeeper.ZkDefs;
 import org.fusesource.fabric.zookeeper.ZkPath;
 import org.fusesource.fabric.zookeeper.internal.OsgiZkClient;
 import org.fusesource.fabric.zookeeper.utils.ZooKeeperUtils;
-import org.fusesource.fabric.zookeeper.utils.ZookeeperImportUtils;
 import org.linkedin.util.clock.Timespan;
 import org.osgi.framework.Bundle;
 import org.osgi.framework.BundleContext;
@@ -57,10 +40,16 @@ import org.osgi.util.tracker.ServiceTracker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.text.DecimalFormat;
+import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
-import static org.fusesource.fabric.utils.BundleUtils.findAndStopBundle;
-import static org.fusesource.fabric.utils.BundleUtils.findOrInstallBundle;
-import static org.fusesource.fabric.utils.BundleUtils.installOrStopBundle;
+import static org.fusesource.fabric.utils.BundleUtils.*;
 import static org.fusesource.fabric.utils.Ports.mapPortToRange;
 
 public class ZooKeeperClusterServiceImpl implements ZooKeeperClusterService {
@@ -70,6 +59,7 @@ public class ZooKeeperClusterServiceImpl implements ZooKeeperClusterService {
     private BundleContext bundleContext;
     private ConfigurationAdmin configurationAdmin;
     private IZKClient zooKeeper;
+    private ProfileDataStore profileDataStore;
     private boolean ensembleAutoStart = Boolean.parseBoolean(System.getProperty(SystemProperties.ENSEMBLE_AUTOSTART));
 
     public void init() {
@@ -107,6 +97,14 @@ public class ZooKeeperClusterServiceImpl implements ZooKeeperClusterService {
 
     public void setZooKeeper(IZKClient zooKeeper) {
         this.zooKeeper = zooKeeper;
+    }
+
+    public void setProfileDataStore(ProfileDataStore profileDataStore) {
+        this.profileDataStore = profileDataStore;
+    }
+
+    public ProfileDataStore getProfileDataStore() {
+        return profileDataStore;
     }
 
     public void createLocalServer() {
@@ -219,41 +217,60 @@ public class ZooKeeperClusterServiceImpl implements ZooKeeperClusterService {
 
             // Import data into zookeeper
             if (autoImportFrom != null) {
-                ZookeeperImportUtils.importFromFileSystem(client, autoImportFrom, "/", null, null, false, false, false);
+                getProfileDataStore().importFromFileSystem(autoImportFrom);
             }
 
-            String defaultProfile = ZkPath.CONFIG_VERSIONS_PROFILE.getPath(version, "default");
-            setConfigProperty(client, defaultProfile + "/org.fusesource.fabric.zookeeper.properties", "zookeeper.url", "${zk:" + karafName + "/ip}:" + Integer.toString(mappedPort));
-            setConfigProperty(client, defaultProfile + "/org.fusesource.fabric.zookeeper.properties", "zookeeper.password", options.getZookeeperPassword());
+            getProfileDataStore().setDefaultVersion(version);
 
-            ZooKeeperUtils.set(client, ZkPath.CONFIG_DEFAULT_VERSION.getPath(), version);
-            ZooKeeperUtils.set(client, ZkPath.CONFIG_VERSIONS_PROFILE.getPath(version, "fabric-ensemble-0000"), "abstract=true\nhidden=true");
+            // configure default profile
+            String defaultProfile = getProfileDataStore().getProfile(version, "default", true);
 
-            String profileNode = ZkPath.CONFIG_VERSIONS_PROFILE.getPath(version, "fabric-ensemble-0000") + "/org.fusesource.fabric.zookeeper.server-0000.properties";
-            Properties p = new Properties();
-            p.put("tickTime", "2000");
-            p.put("initLimit", "10");
-            p.put("syncLimit", "5");
-            p.put("dataDir", "data/zookeeper/0000");
-            loadPropertiesFrom(p, autoImportFrom + "/fabric/configs/versions/1.0/profiles/default/org.fusesource.fabric.zookeeper.server.properties");
-            ZooKeeperUtils.set(client, profileNode, toString(p));
+            Properties zkProps = new Properties();
+            zkProps.setProperty("zookeeper.url", "${zk:" + karafName + "/ip}:" + Integer.toString(mappedPort));
+            zkProps.setProperty("zookeeper.password", options.getZookeeperPassword());
 
-            ZooKeeperUtils.set(client, ZkPath.CONFIG_VERSIONS_PROFILE.getPath(version, "fabric-ensemble-0000-1"), "parents=fabric-ensemble-0000\nhidden=true");
-            profileNode = ZkPath.CONFIG_VERSIONS_PROFILE.getPath(version, "fabric-ensemble-0000-1") + "/org.fusesource.fabric.zookeeper.server-0000.properties";
-            p = new Properties();
-            p.put("clientPort", String.valueOf(mappedPort));
-            ZooKeeperUtils.set(client, profileNode, toString(p));
+            getProfileDataStore().setFileConfiguration(version, defaultProfile, "org.fusesource.fabric.zookeeper.properties", DataStoreHelpers.toBytes(zkProps));
+
+            // configure the ensemble
+            String ensembleProfile = getProfileDataStore().getProfile(version, "fabric-ensemble-0000", true);
+            getProfileDataStore().setProfileAttribute(version, ensembleProfile, "abstract", "true");
+            getProfileDataStore().setProfileAttribute(version, ensembleProfile, "hidden", "true");
+
+            Properties ensembleProps = new Properties();
+            ensembleProps.put("tickTime", "2000");
+            ensembleProps.put("initLimit", "10");
+            ensembleProps.put("syncLimit", "5");
+            ensembleProps.put("dataDir", "data/zookeeper/0000");
+
+            loadPropertiesFrom(ensembleProps, autoImportFrom + "/fabric/configs/versions/1.0/profiles/default/org.fusesource.fabric.zookeeper.server.properties");
+            getProfileDataStore().setFileConfiguration(version, ensembleProfile, "org.fusesource.fabric.zookeeper.server-0000.properties", DataStoreHelpers.toBytes(ensembleProps));
+
+
+            // configure this server in the ensemble
+            String ensembleServerProfile = getProfileDataStore().getProfile(version, "fabric-ensemble-0000-1", true);
+            getProfileDataStore().setProfileAttribute(version, ensembleServerProfile, "hidden", "true");
+            getProfileDataStore().setProfileAttribute(version, ensembleServerProfile, "parents", ensembleProfile);
+
+            Properties serverProps = new Properties();
+            serverProps.put("clientPort", String.valueOf(mappedPort));
+
+            getProfileDataStore().setFileConfiguration(version, ensembleServerProfile, "org.fusesource.fabric.zookeeper.server-0000.properties", DataStoreHelpers.toBytes(serverProps));
+
 
             ZooKeeperUtils.set(client, "/fabric/configs/versions/" + version + "/general/fabric-ensemble", "0000");
             ZooKeeperUtils.set(client, "/fabric/configs/versions/" + version + "/general/fabric-ensemble/0000", karafName);
 
-            String fabricProfile = ZkPath.CONFIG_VERSIONS_PROFILE.getPath(version, "fabric");
-            ZooKeeperUtils.createDefault(client, fabricProfile, "default");
-            p = getProperties(client, fabricProfile + "/org.fusesource.fabric.agent.properties", new Properties());
-            p.put("feature.fabric-commands", "fabric-commands");
-            ZooKeeperUtils.set(client, fabricProfile + "/org.fusesource.fabric.agent.properties", toString(p));
+
+            // configure fabric profile
+            String fabricProfile = getProfileDataStore().getProfile(version, "fabric", true);
+            Properties agentProps = DataStoreHelpers.toProperties(getProfileDataStore().getFileConfiguration(version, fabricProfile, "org.fusesource.fabric.agent.properties"));
+
+            agentProps.put("feature.fabric-commands", "fabric-commands");
+            getProfileDataStore().setFileConfiguration(version, "fabric", "org.fusesource.fabric.agent.properties", DataStoreHelpers.toBytes(agentProps));
+
 
             ZooKeeperUtils.createDefault(client, ZkPath.CONFIG_CONTAINER.getPath(karafName), version);
+
             String assignedProfile = System.getProperty(SystemProperties.PROFILE);
             if (assignedProfile != null && !assignedProfile.isEmpty() && !"fabric".equals(assignedProfile)) {
                 ZooKeeperUtils.createDefault(client, ZkPath.CONFIG_VERSIONS_CONTAINER.getPath(version, karafName), "fabric fabric-ensemble-0000-1 " + assignedProfile);
@@ -262,7 +279,12 @@ public class ZooKeeperClusterServiceImpl implements ZooKeeperClusterService {
             }
 
             // add auth
-            ZooKeeperUtils.createDefault(client, defaultProfile + "/org.fusesource.fabric.jaas/encryption.enabled", "${zk:/fabric/authentication/encryption.enabled}");
+            Map<String, String> configs = new HashMap<String, String>();
+            configs.put("encryption.enabled", "${zk:/fabric/authentication/encryption.enabled}" );
+            getProfileDataStore().setConfiguration(version, defaultProfile, "org.fusesource.fabric.jaas", configs);
+
+
+            // outside of the profile storage area, so we'll keep these in zk
             ZooKeeperUtils.createDefault(client, "/fabric/authentication/encryption.enabled", "true");
             ZooKeeperUtils.createDefault(client, "/fabric/authentication/domain", "karaf");
             addUsersToZookeeper(client, options.getUsers());
@@ -431,7 +453,7 @@ public class ZooKeeperClusterServiceImpl implements ZooKeeperClusterService {
             Map<String, List<Integer>> usedPorts = new HashMap<String, List<Integer>>();
             String oldClusterId = ZooKeeperUtils.get(zooKeeper, "/fabric/configs/versions/" + version + "/general/fabric-ensemble");
             if (oldClusterId != null) {
-                Properties p = toProperties(zooKeeper.getStringData("/fabric/configs/versions/" + version + "/profiles/fabric-ensemble-" + oldClusterId + "/org.fusesource.fabric.zookeeper.server-" + oldClusterId + ".properties"));
+                Properties p = DataStoreHelpers.toProperties(zooKeeper.getStringData("/fabric/configs/versions/" + version + "/profiles/fabric-ensemble-" + oldClusterId + "/org.fusesource.fabric.zookeeper.server-" + oldClusterId + ".properties"));
                 for (Object n : p.keySet()) {
                     String node = (String) n;
                     if (node.startsWith("server.")) {
@@ -492,7 +514,7 @@ public class ZooKeeperClusterServiceImpl implements ZooKeeperClusterService {
                     pidNodeProperties.put("server.id", Integer.toString(index));
                 }
                 pidNodeProperties.put("clientPort", port1);
-                ZooKeeperUtils.set(zooKeeper, pidNode, toString(pidNodeProperties));
+                ZooKeeperUtils.set(zooKeeper, pidNode, DataStoreHelpers.toString(pidNodeProperties));
 
                 ZooKeeperUtils.add(zooKeeper, "/fabric/configs/versions/" + version + "/containers/" + container, "fabric-ensemble-" + newClusterId + "-" + Integer.toString(index));
                 if (connectionUrl.length() > 0) {
@@ -508,7 +530,7 @@ public class ZooKeeperClusterServiceImpl implements ZooKeeperClusterService {
                 index++;
             }
 
-            ZooKeeperUtils.set(zooKeeper, profileNode, toString(profileNodeProperties));
+            ZooKeeperUtils.set(zooKeeper, profileNode, DataStoreHelpers.toString(profileNodeProperties));
 
             if (oldClusterId != null) {
                 Properties properties = ZooKeeperUtils.getProperties(zooKeeper, "/fabric/configs/versions/" + version + "/profiles/default/org.fusesource.fabric.zookeeper.properties");
@@ -553,23 +575,11 @@ public class ZooKeeperClusterServiceImpl implements ZooKeeperClusterService {
         }
     }
 
-    public static String toString(Properties source) throws IOException {
-        StringWriter writer = new StringWriter();
-        source.store(writer, null);
-        return writer.toString();
-    }
-
-    public static Properties toProperties(String source) throws IOException {
-        Properties rc = new Properties();
-        rc.load(new StringReader(source));
-        return rc;
-    }
-
-    public static Properties getProperties(IZKClient client, String file, Properties defaultValue) throws InterruptedException, KeeperException, IOException {
+    public Properties getProperties(IZKClient client, String file, Properties defaultValue) throws InterruptedException, KeeperException, IOException {
         try {
             String v = ZooKeeperUtils.get(client, file);
             if (v != null) {
-                return toProperties(v);
+                return DataStoreHelpers.toProperties(v);
             } else {
                 return defaultValue;
             }
@@ -578,10 +588,10 @@ public class ZooKeeperClusterServiceImpl implements ZooKeeperClusterService {
         }
     }
 
-    public static void setConfigProperty(IZKClient client, String file, String prop, String value) throws InterruptedException, KeeperException, IOException {
+    public void setConfigProperty(IZKClient client, String file, String prop, String value) throws InterruptedException, KeeperException, IOException {
         Properties p = getProperties(client, file, new Properties());
         p.setProperty(prop, value);
-        ZooKeeperUtils.set(client, file, toString(p));
+        ZooKeeperUtils.set(client, file, DataStoreHelpers.toString(p));
     }
 
     private int findPort(Map<String, List<Integer>> usedPorts, String ip, int port) {

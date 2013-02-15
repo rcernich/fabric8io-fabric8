@@ -500,20 +500,7 @@ public class FabricServiceImpl implements FabricService {
 
     @Override
     public Version getDefaultVersion() {
-        try {
-            String version = null;
-            if (zooKeeper.exists(ZkPath.CONFIG_DEFAULT_VERSION.getPath()) != null) {
-                version = zooKeeper.getStringData(ZkPath.CONFIG_DEFAULT_VERSION.getPath());
-            }
-            if (version == null || version.isEmpty()) {
-                version = ZkDefs.DEFAULT_VERSION;
-                ZooKeeperUtils.set(zooKeeper, ZkPath.CONFIG_DEFAULT_VERSION.getPath(), version);
-                ZooKeeperUtils.set(zooKeeper, ZkPath.CONFIG_VERSION.getPath(version), (String) null);
-            }
-            return new VersionImpl(version, this);
-        } catch (Exception e) {
-            throw new FabricException(e);
-        }
+        return new VersionImpl(getProfileDataStore().getDefaultVersion(), this);
     }
 
     @Override
@@ -522,11 +509,7 @@ public class FabricServiceImpl implements FabricService {
     }
 
     public void setDefaultVersion(String versionId) {
-        try {
-            ZooKeeperUtils.set(zooKeeper, ZkPath.CONFIG_DEFAULT_VERSION.getPath(), versionId);
-        } catch (Exception e) {
-            throw new FabricException(e);
-        }
+        getProfileDataStore().setDefaultVersion(versionId);
     }
 
     public Version createVersion(String version) {

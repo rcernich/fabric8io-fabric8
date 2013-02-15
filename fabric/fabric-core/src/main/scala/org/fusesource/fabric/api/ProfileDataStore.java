@@ -46,7 +46,19 @@ public interface ProfileDataStore {
 
     String getProfile(String version, String name);
 
-    void createProfile(String version, String name);
+    String createProfile(String version, String name);
 
     void deleteProfile(String versionId, String profileId);
+
+    void importFromFileSystem(String from);
+
+    String getDefaultVersion();
+
+    void setDefaultVersion(String versionId);
+
+    void setFileConfiguration(String version, String id, String pid, byte[] configuration);
+
+    String getProfile(String version, String name, boolean create);
+
+    void setConfiguration(String version, String id, String pid, Map<String, String> configuration);
 }

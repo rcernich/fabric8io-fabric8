@@ -6,8 +6,10 @@ import org.fusesource.fabric.api.FabricException;
 import org.fusesource.fabric.api.ProfileDataStore;
 import org.fusesource.fabric.internal.DataStoreHelpers;
 import org.fusesource.fabric.zookeeper.IZKClient;
+import org.fusesource.fabric.zookeeper.ZkDefs;
 import org.fusesource.fabric.zookeeper.ZkPath;
 import org.fusesource.fabric.zookeeper.utils.ZooKeeperUtils;
+import org.fusesource.fabric.zookeeper.utils.ZookeeperImportUtils;
 
 import java.io.IOException;
 import java.util.*;
@@ -25,6 +27,42 @@ public class ZKProfileDataStore implements ProfileDataStore {
 
     public IZKClient getZk() {
         return zk;
+    }
+
+    @Override
+    public void importFromFileSystem(String from) {
+        try {
+            ZookeeperImportUtils.importFromFileSystem(zk, from, "/", null, null, false, false, false);
+        } catch (Exception e) {
+            throw new FabricException(e);
+        }
+    }
+
+    @Override
+    public String getDefaultVersion() {
+        try {
+            String version = null;
+            if (zk.exists(ZkPath.CONFIG_DEFAULT_VERSION.getPath()) != null) {
+                version = zk.getStringData(ZkPath.CONFIG_DEFAULT_VERSION.getPath());
+            }
+            if (version == null || version.isEmpty()) {
+                version = ZkDefs.DEFAULT_VERSION;
+                ZooKeeperUtils.set(zk, ZkPath.CONFIG_DEFAULT_VERSION.getPath(), version);
+                ZooKeeperUtils.set(zk, ZkPath.CONFIG_VERSION.getPath(version), (String) null);
+            }
+            return version;
+        } catch (Exception e) {
+            throw new FabricException(e);
+        }
+    }
+
+    @Override
+    public void setDefaultVersion(String versionId) {
+        try {
+            ZooKeeperUtils.set(zk, ZkPath.CONFIG_DEFAULT_VERSION.getPath(), versionId);
+        } catch (Exception e) {
+            throw new FabricException(e);
+        }
     }
 
     @Override
@@ -88,11 +126,15 @@ public class ZKProfileDataStore implements ProfileDataStore {
     }
 
     @Override
-    public String getProfile(String version, String name) {
+    public String getProfile(String version, String name, boolean create) {
         try {
             String path = ZkPath.CONFIG_VERSIONS_PROFILE.getPath(version, name);
             if (zk.exists(path) == null) {
-                return null;
+                if (!create) {
+                    return null;
+                } else {
+                    return createProfile(version, name);
+                }
             }
             return name;
         } catch (Exception e) {
@@ -101,18 +143,24 @@ public class ZKProfileDataStore implements ProfileDataStore {
     }
 
     @Override
-    public void createProfile(String version, String name) {
+    public String getProfile(String version, String name) {
+        return getProfile(version, name, false);
+    }
+
+    @Override
+    public String createProfile(String version, String name) {
         try {
             ZooKeeperUtils.create(zk, ZkPath.CONFIG_VERSIONS_PROFILE.getPath(version, name));
+            return name;
         } catch (Exception e) {
             throw new FabricException(e);
         }
     }
 
     @Override
-    public void deleteProfile(String versionId, String profileId) {
+    public void deleteProfile(String version, String profile) {
         try {
-            zk.deleteWithChildren(ZkPath.CONFIG_VERSIONS_PROFILE.getPath(versionId, profileId));
+            zk.deleteWithChildren(ZkPath.CONFIG_VERSIONS_PROFILE.getPath(version, profile));
         } catch (Exception e) {
             throw new FabricException(e);
         }
@@ -209,41 +257,52 @@ public class ZKProfileDataStore implements ProfileDataStore {
     public void setFileConfigurations(String version, String id, Map<String, byte[]> configurations) {
         try {
             Map<String, byte[]> oldCfgs = getFileConfigurations(version, id);
-            // Store new configs
             String path = ZkPath.CONFIG_VERSIONS_PROFILE.getPath(version, id);
+
             for (Map.Entry<String, byte[]> entry : configurations.entrySet()) {
                 String pid = entry.getKey();
                 oldCfgs.remove(pid);
                 byte[] newCfg = entry.getValue();
-                String configPath =  path + "/" + pid;
-                if (zk.exists(configPath) != null && zk.getChildren(configPath).size() > 0) {
-                    List<String> kids = zk.getChildren(configPath);
-                    ArrayList<String> saved = new ArrayList<String>();
-                    // old format, we assume that the byte stream is in
-                    // a .properties format
-                    for (String line : new String(newCfg).split("\n")) {
-                        if (line.startsWith("#") || line.length() == 0) {
-                            continue;
-                        }
-                        String nameValue[] = line.split("=", 2);
-                        if (nameValue.length < 2) {
-                            continue;
-                        }
-                        String newPath = configPath + "/" + nameValue[0].trim();
-                        ZooKeeperUtils.set(zk, newPath, nameValue[1].trim());
-                        saved.add(nameValue[0].trim());
-                    }
-                    for ( String kid : kids ) {
-                        if (!saved.contains(kid)) {
-                            zk.deleteWithChildren(configPath + "/" + kid);
-                        }
-                    }
-                } else {
-                    ZooKeeperUtils.set(zk, configPath, newCfg);
-                }
+                setFileConfiguration(version, id, pid, newCfg);
             }
+
             for (String pid : oldCfgs.keySet()) {
                 zk.deleteWithChildren(path + "/" + pid);
+            }
+        } catch (Exception e) {
+            throw new FabricException(e);
+        }
+    }
+
+    @Override
+    public void setFileConfiguration(String version, String id, String pid, byte[] configuration) {
+        try {
+            String path = ZkPath.CONFIG_VERSIONS_PROFILE.getPath(version, id);
+            String configPath =  path + "/" + pid;
+            if (zk.exists(configPath) != null && zk.getChildren(configPath).size() > 0) {
+                List<String> kids = zk.getChildren(configPath);
+                ArrayList<String> saved = new ArrayList<String>();
+                // old format, we assume that the byte stream is in
+                // a .properties format
+                for (String line : new String(configuration).split("\n")) {
+                    if (line.startsWith("#") || line.length() == 0) {
+                        continue;
+                    }
+                    String nameValue[] = line.split("=", 2);
+                    if (nameValue.length < 2) {
+                        continue;
+                    }
+                    String newPath = configPath + "/" + nameValue[0].trim();
+                    ZooKeeperUtils.set(zk, newPath, nameValue[1].trim());
+                    saved.add(nameValue[0].trim());
+                }
+                for ( String kid : kids ) {
+                    if (!saved.contains(kid)) {
+                        zk.deleteWithChildren(configPath + "/" + kid);
+                    }
+                }
+            } else {
+                ZooKeeperUtils.set(zk, configPath, configuration);
             }
         } catch (Exception e) {
             throw new FabricException(e);
@@ -286,13 +345,23 @@ public class ZKProfileDataStore implements ProfileDataStore {
             for (Map.Entry<String, Map<String, String>> entry : configurations.entrySet()) {
                 String pid = entry.getKey();
                 oldCfgs.remove(pid);
-                byte[] data = DataStoreHelpers.toBytes(DataStoreHelpers.toProperties(entry.getValue()));
-                String p =  path + "/" + pid + ".properties";
-                ZooKeeperUtils.set(zk, p, data);
+                setConfiguration(version, id, pid, entry.getValue());
             }
             for (String key : oldCfgs.keySet()) {
                 zk.deleteWithChildren(path + "/" + key +".properties");
             }
+        } catch (Exception e) {
+            throw new FabricException(e);
+        }
+    }
+
+    @Override
+    public void setConfiguration(String version, String id, String pid, Map<String, String> configuration) {
+        try {
+            String path = ZkPath.CONFIG_VERSIONS_PROFILE.getPath(version, id);
+            byte[] data = DataStoreHelpers.toBytes(DataStoreHelpers.toProperties(configuration));
+            String p =  path + "/" + pid + ".properties";
+            ZooKeeperUtils.set(zk, p, data);
         } catch (Exception e) {
             throw new FabricException(e);
         }

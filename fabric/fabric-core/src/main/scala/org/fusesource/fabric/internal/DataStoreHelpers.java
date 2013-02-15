@@ -1,8 +1,6 @@
 package org.fusesource.fabric.internal;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
+import java.io.*;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
@@ -42,5 +40,17 @@ public class DataStoreHelpers {
         } else {
             return value;
         }
+    }
+
+    public static String toString(Properties source) throws IOException {
+        StringWriter writer = new StringWriter();
+        source.store(writer, null);
+        return writer.toString();
+    }
+
+    public static Properties toProperties(String source) throws IOException {
+        Properties rc = new Properties();
+        rc.load(new StringReader(source));
+        return rc;
     }
 }
