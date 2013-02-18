@@ -328,7 +328,13 @@ public class ZKProfileDataStore implements ProfileDataStore {
 
     @Override
     public Map<String, String> getConfiguration(String version, String id, String pid) throws InterruptedException, KeeperException, IOException {
-        String path = ZkPath.CONFIG_VERSIONS_PROFILE.getPath(version, id) + "/" + pid +".properties";
+
+        String path = ZkPath.CONFIG_VERSIONS_PROFILE.getPath(version, id) + "/" + pid;
+
+        // TODO make callers not rely on this code assuming pids end with .properties
+        if (!pid.endsWith(".properties")) {
+            path = path + ".properties";
+        }
         if (zk.exists(path) == null) {
             return null;
         }
