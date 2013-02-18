@@ -92,8 +92,9 @@
         
         <module>openshift</module>
         <module>fmc-distro</module>
+			<module>fabric-git</module>
 
 
-    </modules>
+		</modules>
 
 </project>
