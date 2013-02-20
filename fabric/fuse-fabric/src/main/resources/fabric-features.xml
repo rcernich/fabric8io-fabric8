@@ -143,6 +143,7 @@
 
     <feature name="fabric-core" version="${project.version}" resolver="(obr)">
         <feature version="${project.version}">fabric-zookeeper</feature>
+			<feature version="${project.version}">fabric-git-server</feature>
         <bundle dependency="true">mvn:com.weiglewilczek.scala-lang-osgi/scala-library/${scala-osgi-version}</bundle>
         <bundle>mvn:org.fusesource.insight/insight-log/${project.version}</bundle>
         <bundle>mvn:org.fusesource.fabric/fabric-core/${project.version}</bundle>
@@ -498,9 +499,14 @@
         <bundle>blueprint:file:etc/fabric-ldap-jaas-${project.version}.xml</bundle>
     </feature>
 
+	<feature name="fabric-git" version="${project.version}" resolver="(obr)">
+		<feature version="${project.version}">fabric-groups</feature>
+		<bundle dependency="true">mvn:org.apache.servicemix.bundles/org.apache.servicemix.bundles.jzlib/${org.apache.servicemix.bundles.jzlib.version}</bundle>
+		<bundle>mvn:org.fusesource.fabric/fabric-git/${project.version}</bundle>
+	</feature>
+
 	  <feature name="fabric-git-server" version="${project.version}" resolver="(obr)">
-			  <feature version="${project.version}">fabric-groups</feature>
-			  <bundle dependency="true">mvn:org.apache.servicemix.bundles/org.apache.servicemix.bundles.jzlib/${org.apache.servicemix.bundles.jzlib.version}</bundle>
+			  <feature version="${project.version}">fabric-git</feature>
 		    <bundle>mvn:org.fusesource.fabric/fabric-git-server/${project.version}</bundle>
 	  </feature>
 

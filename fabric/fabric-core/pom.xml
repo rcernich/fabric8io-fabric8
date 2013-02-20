@@ -109,7 +109,20 @@
           <scope>provided</scope>
       </dependency>
 
-        <dependency>
+			<dependency>
+				  <groupId>org.eclipse.jgit</groupId>
+				  <artifactId>org.eclipse.jgit</artifactId>
+				  <version>${jgit.version}</version>
+			</dependency>
+
+			<dependency>
+				  <groupId>org.fusesource.fabric</groupId>
+				  <artifactId>fabric-git</artifactId>
+				<version>${project.version}</version>
+				  <scope>provided</scope>
+			 </dependency>
+
+       <dependency>
           <groupId>org.fusesource.fabric</groupId>
           <artifactId>fabric-utils</artifactId>
           <scope>provided</scope>

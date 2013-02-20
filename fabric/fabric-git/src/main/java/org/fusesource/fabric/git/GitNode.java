@@ -1,4 +1,4 @@
-package org.fusesource.fabric.git.http;
+package org.fusesource.fabric.git;
 
 import org.codehaus.jackson.annotate.JsonProperty;
 import org.fusesource.fabric.groups.NodeState;

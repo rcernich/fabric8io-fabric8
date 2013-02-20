@@ -26,6 +26,8 @@
 
     <reference id="zooKeeper" interface="org.fusesource.fabric.zookeeper.IZKClient" />
 
+	  <reference id="fabricGitService" interface="org.fusesource.fabric.git.FabricGitService" />
+
     <reference id="configurationAdmin" interface="org.osgi.service.cm.ConfigurationAdmin" availability="optional"/>
 
     <reference id="mbeanServer" interface="javax.management.MBeanServer" availability="optional"/>
@@ -43,7 +45,12 @@
       <property name="zk" ref="zooKeeper"/>
     </bean>
 
-    <service ref="zkProfileDataStore" interface="org.fusesource.fabric.api.ProfileDataStore"/>
+	 <bean id="gitProfileDataStore" class="org.fusesource.fabric.service.GitProfileDataStore">
+		 <property name="fabricGitService" ref="fabricGitService"/>
+		 <property name="delegate" ref="zkProfileDataStore"/>
+	 </bean>
+
+    <service ref="gitProfileDataStore" interface="org.fusesource.fabric.api.ProfileDataStore"/>
 
     <reference id="profileDataStore" interface="org.fusesource.fabric.api.ProfileDataStore" availability="optional"/>
 
@@ -58,7 +65,7 @@
         <property name="bundleContext" ref="blueprintBundleContext"/>
         <property name="zooKeeper" ref="zooKeeper"/>
         <property name="configurationAdmin" ref="configurationAdmin"/>
-        <property name="profileDataStore" ref="profileDataStore"/>
+        <property name="profileDataStore" ref="gitProfileDataStore"/>
     </bean>
 
     <service ref="zooKeeperClusterService" interface="org.fusesource.fabric.api.ZooKeeperClusterService" />

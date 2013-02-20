@@ -30,14 +30,13 @@
 
     <bean id="registrationHandler" class="org.fusesource.fabric.git.http.GitHttpServerRegistrationHandler" init-method="init" destroy-method="destroy">
 			<property name="gitServlet"  ref="gitServlet"/>
+			<property name="zookeeper" ref="zookeeper"/>
 			<property name="realm"  value="${realm}"/>
 			<property name="role"  value="${role}"/>
     </bean>
 
     <reference id="configurationAdmin" interface="org.osgi.service.cm.ConfigurationAdmin"/>
-    <reference id="zookeeper" interface="org.fusesource.fabric.zookeeper.IZKClient">
-        <reference-listener ref="registrationHandler" bind-method="bindZooKeeper" unbind-method="unbindZooKeeper" />
-    </reference>
+    <reference id="zookeeper" interface="org.fusesource.fabric.zookeeper.IZKClient"/>
 
     <reference id="httpService" interface="org.osgi.service.http.HttpService" availability="optional">
         <reference-listener ref="registrationHandler" bind-method="bindHttpService" unbind-method="unbindHttpService" />

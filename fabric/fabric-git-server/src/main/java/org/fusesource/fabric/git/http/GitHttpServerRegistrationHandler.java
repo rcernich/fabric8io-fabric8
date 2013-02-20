@@ -17,7 +17,8 @@
 
 package org.fusesource.fabric.git.http;
 
-import org.eclipse.jgit.api.InitCommand;
+import org.eclipse.jgit.http.server.GitServlet;
+import org.fusesource.fabric.git.GitNode;
 import org.fusesource.fabric.groups.ChangeListener;
 import org.fusesource.fabric.groups.ClusteredSingleton;
 import org.fusesource.fabric.groups.Group;
@@ -35,8 +36,6 @@ import org.osgi.service.http.HttpContext;
 import org.osgi.service.http.HttpService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.eclipse.jgit.http.server.GitServlet;
-import org.eclipse.jgit.api.Git;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -93,31 +92,14 @@ public class GitHttpServerRegistrationHandler implements LifecycleListener, Conf
 		this.httpService = null;
 	}
 
-	public synchronized void bindZooKeeper(IZKClient zookeeper) {
-		this.zookeeper = zookeeper;
-		if (zookeeper != null) {
-			zookeeper.registerListener(this);
-		}
-		if (group == null) {
-			group = ZooKeeperGroupFactory.create(zookeeper, ZkPath.GIT.getPath());
-			singleton.start(group);
-		}
-	}
-
-	public synchronized void unbindZooKeeper(IZKClient zookeeper) {
-		if (zookeeper != null) {
-			zookeeper.removeListener(this);
-		}
-		this.connected = false;
-		this.zookeeper = null;
-		this.singleton.stop();
-		this.group = null;
-	}
-
 
 	@Override
 	public void onConnected() {
 		connected = true;
+		if (group == null) {
+			group = ZooKeeperGroupFactory.create(zookeeper, ZkPath.GIT.getPath());
+			singleton.start(group);
+		}
 		register();
 	}
 
@@ -148,9 +130,6 @@ public class GitHttpServerRegistrationHandler implements LifecycleListener, Conf
 									if (!fabricRoot.exists() && !fabricRoot.mkdirs()) {
 										throw new FileNotFoundException("Could not found git root:" + basePath);
 									}
-									InitCommand init = Git.init();
-									init.setDirectory(fabricRoot);
-									init.call();
 
 									Dictionary initParams = new Properties();
 									initParams.put("base-path", basePath);
@@ -220,7 +199,7 @@ public class GitHttpServerRegistrationHandler implements LifecycleListener, Conf
 	GitNode createState() {
 		String fabricRepoUrl = "http://${zk:" + name + "/ip}:" + getPortSafe() + "/git/fabric/";
 		GitNode state = new GitNode();
-		state.setId(name);
+		state.setId("fabric-repo");
 		state.setUrl(fabricRepoUrl);
 		return state;
 	}
@@ -286,5 +265,13 @@ public class GitHttpServerRegistrationHandler implements LifecycleListener, Conf
 
 	public void setConfigurationAdmin(ConfigurationAdmin configurationAdmin) {
 		this.configurationAdmin = configurationAdmin;
+	}
+
+	public IZKClient getZookeeper() {
+		return zookeeper;
+	}
+
+	public void setZookeeper(IZKClient zookeeper) {
+		this.zookeeper = zookeeper;
 	}
 }
