@@ -18,6 +18,7 @@
 package org.jboss.quickstarts.fuse.soap;
 
 import javax.jws.WebService;
+import java.net.InetAddress;
 
 /**
  * This is our web service implementation, which implements the web service interface.
@@ -26,10 +27,21 @@ import javax.jws.WebService;
 @WebService(endpointInterface = "org.jboss.quickstarts.fuse.soap.HelloWorld")
 public class HelloWorldImpl implements HelloWorld {
 
+    private static final String ADDRESS;
+
     /**
      * Just a simple implementation for a friendly message that says hello.
      */
     public String sayHi(String name) {
-        return "Hello " + name;
+        return "Hello " + name + ", from " + ADDRESS;
+    }
+
+    static {
+        try {
+            InetAddress address = InetAddress.getLocalHost();
+            ADDRESS = address.getHostAddress();
+        } catch (Throwable t) {
+            throw new RuntimeException(t);
+        }
     }
 }
